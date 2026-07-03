@@ -48,7 +48,7 @@ services:
   # Una base por servicio, creadas por el init script. Alpine para footprint.
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16.6-alpine
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/postgres:16.6-alpine
     restart: unless-stopped
     <<: *default-logging
     environment:
@@ -70,7 +70,7 @@ services:
   # n8n — automatizacion (form -> Twenty -> Listmonk -> WhatsApp)
   # ---------------------------------------------------------------------------
   n8n:
-    image: n8nio/n8n:1.70.3
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/n8n:1.70.3
     restart: unless-stopped
     <<: *default-logging
     depends_on:
@@ -115,7 +115,7 @@ services:
   # Twenty — CRM. Requiere su propio Postgres (spilo, con extensiones) + Redis.
   # ---------------------------------------------------------------------------
   twenty-db:
-    image: twentycrm/twenty-postgres-spilo:v0.42.0
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/twenty-postgres:v0.42.0
     restart: unless-stopped
     <<: *default-logging
     environment:
@@ -132,7 +132,7 @@ services:
       retries: 10
 
   twenty-redis:
-    image: redis:7.4-alpine
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/redis:7.4-alpine
     restart: unless-stopped
     <<: *default-logging
     command: ["redis-server", "--maxmemory-policy", "noeviction", "--save", "", "--appendonly", "no"]
@@ -144,7 +144,7 @@ services:
       retries: 5
 
   twenty-server:
-    image: twentycrm/twenty:v0.42.0
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/twenty:v0.42.0
     restart: unless-stopped
     <<: *default-logging
     depends_on:
@@ -171,7 +171,7 @@ services:
       retries: 10
 
   twenty-worker:
-    image: twentycrm/twenty:v0.42.0
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/twenty:v0.42.0
     restart: unless-stopped
     <<: *default-logging
     command: ["yarn", "worker:prod"]
@@ -194,7 +194,7 @@ services:
   # Cal.com — agenda de demos (embebible en la landing)
   # ---------------------------------------------------------------------------
   calcom:
-    image: calcom/cal.com:v4.7.11
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/calcom:v4.7.11
     restart: unless-stopped
     <<: *default-logging
     depends_on:
@@ -226,7 +226,7 @@ services:
   # Imagen minima (binario Go). Se auto-instala idempotente en el arranque.
   # ---------------------------------------------------------------------------
   listmonk:
-    image: listmonk/listmonk:v3.0.0
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/listmonk:v3.0.0
     restart: unless-stopped
     <<: *default-logging
     depends_on:
@@ -258,7 +258,7 @@ services:
   # ClickHouse (dedicado).
   # ---------------------------------------------------------------------------
   plausible-clickhouse:
-    image: clickhouse/clickhouse-server:24.12-alpine
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/clickhouse:24.12-alpine
     restart: unless-stopped
     <<: *default-logging
     volumes:
@@ -278,7 +278,7 @@ services:
       retries: 10
 
   plausible:
-    image: ghcr.io/plausible/community-edition:v2.1.4
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/plausible:v2.1.4
     restart: unless-stopped
     <<: *default-logging
     command: ["sh", "-c", "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"]
@@ -308,7 +308,7 @@ services:
   # Primer arranque: escanear el QR con `make wa-qr` (aparece en los logs).
   # ---------------------------------------------------------------------------
   openwa:
-    image: openwa/api-server:1.5.2
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/openwa:1.5.2
     restart: unless-stopped
     <<: *default-logging
     command: >

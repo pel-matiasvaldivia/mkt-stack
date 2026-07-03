@@ -31,7 +31,7 @@ scripts/gen-secrets.sh      # genera .env con secretos aleatorios del largo corr
 Makefile                    # up / down / logs / pull / backup / wa-qr ...
 postgres/init/              # crea una base por servicio en el 1er arranque
 clickhouse/                 # config de bajo consumo para Plausible
-.github/workflows/deploy.yml# deploy por SSH al VPS (footprint mínimo en CI)
+.github/workflows/publish-images.yml # espeja las imágenes a tu GHCR (no toca el VPS)
 prompts/01-stack.md         # prompt que generó este stack
 prompts/02-captura-demo.md  # siguiente paso: n8n + landing que convierte
 ```
@@ -87,26 +87,42 @@ Un Proxy Host por servicio (Forward Hostname = nombre del contenedor):
 5. **Plausible:** primer usuario en `analytics.tudominio.com` y creá el sitio; copiá el
    snippet de tracking para la landing (lo usa `prompts/02-captura-demo.md`).
 
-## Deploy automático (GitHub Actions)
+## Imágenes en GitHub (GitHub Actions → GHCR)
 
-`.github/workflows/deploy.yml` valida el compose y, en cada push a `main` que toque el
-stack, hace `scp` de los archivos al VPS y corre `docker compose pull && up -d` con
-`docker image prune` al final (footprint mínimo). El `.env` con los secretos **vive en
-el servidor**, nunca en el repo ni en CI.
+El CI **no se conecta a tu servidor**. `.github/workflows/publish-images.yml` valida el
+compose y **espeja las imágenes pineadas** del stack al GitHub Container Registry
+(GHCR) de tu cuenta: `ghcr.io/pel-matiasvaldivia/mkt-stack/<servicio>:<tag>`. Vos, desde
+el VPS, solo hacés `docker compose pull` y bajás las imágenes ya listas.
 
-Configurar en **Settings → Environments → `production`** estos secrets:
+Cómo trabaja (footprint mínimo):
 
-| Secret | Qué es |
-|---|---|
-| `SSH_HOST` | IP/host del VPS |
-| `SSH_USER` | usuario SSH con acceso a Docker |
-| `SSH_KEY` | clave privada SSH (la pública va en el VPS) |
-| `SSH_PORT` | puerto SSH (opcional, default 22) |
-| `DEPLOY_PATH` | ruta del stack en el VPS (ej. `/opt/mkt-stack`) |
+- **Matrix:** cada imagen se espeja en su propio runner (sin presión de disco).
+- **Idempotente:** si el tag ya existe en GHCR, no se re-sube (los tags rara vez cambian
+  → la mayoría de las corridas no suben nada).
+- No deja capas en el runner (se limpian al terminar cada job).
+- No necesita ningún secret: usa el `GITHUB_TOKEN` propio de la Action para pushear.
 
-> Primer deploy: generá el `.env` en el servidor (`./scripts/gen-secrets.sh` + completar
-> dominios/SMTP) **antes** de disparar el workflow; si falta, el deploy aborta a
-> propósito para no arrancar con secretos vacíos.
+El compose apunta a GHCR vía la variable `REGISTRY` del `.env`
+(`REGISTRY=ghcr.io/pel-matiasvaldivia/mkt-stack`).
+
+### En tu servidor
+
+```bash
+# 1) Las imágenes deben ser accesibles. Lo más simple: hacer PÚBLICO cada
+#    package en GitHub (Profile → Packages → cada uno → Package settings →
+#    Change visibility → Public). Así no hace falta login.
+#
+#    Si preferís mantenerlos privados, logueate una vez en el VPS con un PAT
+#    de scope `read:packages`:
+#    echo $GHCR_PAT | docker login ghcr.io -u pel-matiasvaldivia --password-stdin
+
+# 2) Bajar las imágenes ya publicadas y levantar
+docker compose pull
+docker compose up -d
+```
+
+> El primer push a `main` (o correr el workflow a mano con **Run workflow**) publica
+> las 10 imágenes. Las corridas siguientes solo suben lo que haya cambiado de tag.
 
 ## Backups
 

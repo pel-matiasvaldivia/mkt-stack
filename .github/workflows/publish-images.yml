@@ -1,0 +1,90 @@
+name: publish-images
+
+# El CI NO se conecta a tu servidor. Solo espeja (mirror) las imagenes pineadas
+# del stack al GitHub Container Registry (GHCR) de tu cuenta. Despues, desde tu
+# VPS, corres `docker compose pull` y bajas las imagenes ya listas desde GHCR.
+#
+# Footprint minimo:
+#   - Matrix: cada imagen se espeja en su propio runner (sin presion de disco).
+#   - Skip idempotente: si el tag ya existe en GHCR, no se re-sube.
+#   - No se guardan capas en el runner (se borran al terminar cada job).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker-compose.yml"
+      - ".github/workflows/publish-images.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: publish-images
+  cancel-in-progress: false
+
+env:
+  # Debe coincidir con REGISTRY del .env / docker-compose.yml (en minusculas).
+  TARGET_REGISTRY: ghcr.io/pel-matiasvaldivia/mkt-stack
+
+jobs:
+  validate:
+    name: Validar compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: docker compose config
+        run: |
+          cp .env.example .env
+          docker compose config -q
+          echo "compose valido"
+
+  mirror:
+    name: Mirror ${{ matrix.name }}
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: postgres,        src: "docker.io/library/postgres:16.6-alpine" }
+          - { name: n8n,             src: "docker.io/n8nio/n8n:1.70.3" }
+          - { name: twenty,          src: "docker.io/twentycrm/twenty:v0.42.0" }
+          - { name: twenty-postgres, src: "docker.io/twentycrm/twenty-postgres-spilo:v0.42.0" }
+          - { name: redis,           src: "docker.io/library/redis:7.4-alpine" }
+          - { name: calcom,          src: "docker.io/calcom/cal.com:v4.7.11" }
+          - { name: listmonk,        src: "docker.io/listmonk/listmonk:v3.0.0" }
+          - { name: clickhouse,      src: "docker.io/clickhouse/clickhouse-server:24.12-alpine" }
+          - { name: plausible,       src: "ghcr.io/plausible/community-edition:v2.1.4" }
+          - { name: openwa,          src: "docker.io/openwa/api-server:1.5.2" }
+    steps:
+      - name: Login a GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Espejar ${{ matrix.name }} (skip si ya existe)
+        run: |
+          set -euo pipefail
+          SRC="${{ matrix.src }}"
+          TAG="${SRC##*:}"
+          DEST="${TARGET_REGISTRY}/${{ matrix.name }}:${TAG}"
+
+          if docker manifest inspect "$DEST" >/dev/null 2>&1; then
+            echo "==> $DEST ya existe en GHCR. Nada que hacer."
+            exit 0
+          fi
+
+          echo "==> pull  $SRC"
+          docker pull --quiet "$SRC"
+          echo "==> tag   $DEST"
+          docker tag "$SRC" "$DEST"
+          echo "==> push  $DEST"
+          docker push --quiet "$DEST"
+          echo "==> limpieza local"
+          docker rmi "$SRC" "$DEST" >/dev/null 2>&1 || true
