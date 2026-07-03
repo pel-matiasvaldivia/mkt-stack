@@ -14,7 +14,7 @@ Traefik: NPM hace el TLS.
 | **Cal.com** | `calcom/cal.com` | Agenda de demos (embebible en la landing) |
 | **Listmonk** | `listmonk/listmonk` (binario Go) | Email: prospección, nurture, newsletter |
 | **Plausible** | `community-edition` + `clickhouse:alpine` | Analítica web sin cookies |
-| **open-wa** | `openwa/api-server` | API de WhatsApp para n8n (solo red interna) |
+| **open-wa** | `openwa/wa-automate` | API de WhatsApp para n8n (solo red interna) |
 | Postgres compartido | `postgres:16-alpine` | Bases de n8n, calcom, listmonk, plausible |
 
 > **Footprint:** se usan variantes `alpine`/`slim` en todo lo que las tiene (Postgres,

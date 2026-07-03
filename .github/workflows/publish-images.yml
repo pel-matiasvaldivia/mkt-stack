@@ -55,11 +55,11 @@ jobs:
           - { name: twenty,          src: "docker.io/twentycrm/twenty:v0.42.0" }
           - { name: twenty-postgres, src: "docker.io/twentycrm/twenty-postgres-spilo:v0.42.0" }
           - { name: redis,           src: "docker.io/library/redis:7.4-alpine" }
-          - { name: calcom,          src: "docker.io/calcom/cal.com:v4.7.11" }
+          - { name: calcom,          src: "docker.io/calcom/cal.com:v6.2.0" }
           - { name: listmonk,        src: "docker.io/listmonk/listmonk:v3.0.0" }
           - { name: clickhouse,      src: "docker.io/clickhouse/clickhouse-server:24.12-alpine" }
           - { name: plausible,       src: "ghcr.io/plausible/community-edition:v2.1.4" }
-          - { name: openwa,          src: "docker.io/openwa/api-server:1.5.2" }
+          - { name: openwa,          src: "docker.io/openwa/wa-automate:latest" }
     steps:
       - name: Login a GHCR
         uses: docker/login-action@v3

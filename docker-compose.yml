@@ -194,7 +194,7 @@ services:
   # Cal.com — agenda de demos (embebible en la landing)
   # ---------------------------------------------------------------------------
   calcom:
-    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/calcom:v4.7.11
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/calcom:v6.2.0
     restart: unless-stopped
     <<: *default-logging
     depends_on:
@@ -304,23 +304,26 @@ services:
       retries: 10
 
   # ---------------------------------------------------------------------------
-  # open-wa — API de WhatsApp para n8n. SOLO red interna (no lo publica NPM).
+  # open-wa (wa-automate) — API de WhatsApp para n8n. SOLO red interna.
+  # Solo publica tag `latest` upstream (excepcion al pin: se espeja a GHCR).
   # Primer arranque: escanear el QR con `make wa-qr` (aparece en los logs).
+  # NOTA: los flags/volumen de sesion pueden requerir ajuste segun la version
+  # de wa-automate; verificar en el 1er arranque (docs: open-wa/wa-automate).
   # ---------------------------------------------------------------------------
   openwa:
-    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/openwa:1.5.2
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/openwa:latest
     restart: unless-stopped
+    init: true
     <<: *default-logging
+    environment:
+      PORT: 8080
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
     command: >
-      --session-data-only
-      --port 8080
-      --api-host 0.0.0.0
-      --key ${OPENWA_API_KEY}
       --session-id custos
-      --disable-spins
-      --popup false
+      --api-key ${OPENWA_API_KEY}
+      --port 8080
     volumes:
-      - openwa_data:/app/sessions
+      - openwa_data:/sessions
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
