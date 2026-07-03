@@ -1,0 +1,329 @@
+# =============================================================================
+# CustOS — mkt-stack
+# Stack de marketing/ventas self-hosted, detras de un Nginx Proxy Manager (NPM)
+# ya existente. NPM gestiona TLS/Let's Encrypt: aca NO hay Caddy/Traefik ni certs.
+#
+# Footprint: imagenes alpine/slim donde existen (postgres, redis, clickhouse).
+# Twenty, Cal.com y Plausible son apps Node/Elixir: no tienen variante alpine
+# oficial, se usan sus imagenes upstream mas chicas disponibles y pineadas.
+#
+# Redes:
+#   - proxy   (externa, la de NPM): solo se conectan los servicios web que NPM
+#             publica. NPM los alcanza por nombre_de_contenedor:puerto.
+#   - internal: bases de datos, redis, clickhouse y trafico interno. NUNCA se
+#             publican puertos al host.
+# =============================================================================
+
+name: mkt-stack
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+networks:
+  proxy:
+    external: true
+    name: ${NPM_NETWORK:-npm_network}
+  internal:
+    driver: bridge
+
+volumes:
+  pg_data:
+  twenty_pg_data:
+  twenty_data:
+  redis_data:
+  clickhouse_data:
+  clickhouse_logs:
+  n8n_data:
+  listmonk_uploads:
+  plausible_data:
+  openwa_data:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres compartido (n8n, calcom, listmonk, plausible)
+  # Una base por servicio, creadas por el init script. Alpine para footprint.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # n8n — automatizacion (form -> Twenty -> Listmonk -> WhatsApp)
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: n8nio/n8n:1.70.3
+    restart: unless-stopped
+    <<: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_HOST: ${N8N_HOST}
+      N8N_PROTOCOL: https
+      N8N_PORT: 5678
+      WEBHOOK_URL: https://${N8N_HOST}/
+      N8N_EDITOR_BASE_URL: https://${N8N_HOST}/
+      N8N_PROXY_HOPS: 1
+      N8N_SECURE_COOKIE: "true"
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      GENERIC_TIMEZONE: ${TZ:-America/Argentina/Buenos_Aires}
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+      # SMTP para los nodos de mail
+      N8N_SMTP_HOST: ${SMTP_HOST}
+      N8N_SMTP_PORT: ${SMTP_PORT}
+      N8N_SMTP_USER: ${SMTP_USER}
+      N8N_SMTP_PASS: ${SMTP_PASSWORD}
+      N8N_SMTP_SENDER: ${SMTP_FROM}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks: [internal, proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Twenty — CRM. Requiere su propio Postgres (spilo, con extensiones) + Redis.
+  # ---------------------------------------------------------------------------
+  twenty-db:
+    image: twentycrm/twenty-postgres-spilo:v0.42.0
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      PGUSER_SUPERUSER: postgres
+      PGPASSWORD_SUPERUSER: ${TWENTY_PG_PASSWORD}
+      ALLOW_NOSSL: "true"
+    volumes:
+      - twenty_pg_data:/home/postgres/pgdata
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  twenty-redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    <<: *default-logging
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--save", "", "--appendonly", "no"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  twenty-server:
+    image: twentycrm/twenty:v0.42.0
+    restart: unless-stopped
+    <<: *default-logging
+    depends_on:
+      twenty-db:
+        condition: service_healthy
+      twenty-redis:
+        condition: service_healthy
+    environment:
+      NODE_PORT: 3000
+      SERVER_URL: ${TWENTY_SERVER_URL}
+      PG_DATABASE_URL: postgres://postgres:${TWENTY_PG_PASSWORD}@twenty-db:5432/default
+      REDIS_URL: redis://twenty-redis:6379
+      APP_SECRET: ${TWENTY_APP_SECRET}
+      STORAGE_TYPE: local
+      DISABLE_DB_MIGRATIONS: "false"
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - twenty_data:/app/packages/twenty-server/.local-storage
+    networks: [internal, proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  twenty-worker:
+    image: twentycrm/twenty:v0.42.0
+    restart: unless-stopped
+    <<: *default-logging
+    command: ["yarn", "worker:prod"]
+    depends_on:
+      twenty-server:
+        condition: service_healthy
+    environment:
+      SERVER_URL: ${TWENTY_SERVER_URL}
+      PG_DATABASE_URL: postgres://postgres:${TWENTY_PG_PASSWORD}@twenty-db:5432/default
+      REDIS_URL: redis://twenty-redis:6379
+      APP_SECRET: ${TWENTY_APP_SECRET}
+      STORAGE_TYPE: local
+      DISABLE_DB_MIGRATIONS: "true"
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - twenty_data:/app/packages/twenty-server/.local-storage
+    networks: [internal]
+
+  # ---------------------------------------------------------------------------
+  # Cal.com — agenda de demos (embebible en la landing)
+  # ---------------------------------------------------------------------------
+  calcom:
+    image: calcom/cal.com:v4.7.11
+    restart: unless-stopped
+    <<: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/calcom
+      DATABASE_DIRECT_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/calcom
+      NEXTAUTH_SECRET: ${CALCOM_NEXTAUTH_SECRET}
+      CALENDSO_ENCRYPTION_KEY: ${CALCOM_ENCRYPTION_KEY}
+      NEXT_PUBLIC_WEBAPP_URL: ${CALCOM_WEBAPP_URL}
+      NEXTAUTH_URL: ${CALCOM_WEBAPP_URL}/api/auth
+      NEXT_PUBLIC_LICENSE_CONSENT: "agree"
+      EMAIL_FROM: ${SMTP_FROM}
+      EMAIL_SERVER_HOST: ${SMTP_HOST}
+      EMAIL_SERVER_PORT: ${SMTP_PORT}
+      EMAIL_SERVER_USER: ${SMTP_USER}
+      EMAIL_SERVER_PASSWORD: ${SMTP_PASSWORD}
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    networks: [internal, proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/auth/login >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Listmonk — email marketing (prospeccion, nurture, newsletter)
+  # Imagen minima (binario Go). Se auto-instala idempotente en el arranque.
+  # ---------------------------------------------------------------------------
+  listmonk:
+    image: listmonk/listmonk:v3.0.0
+    restart: unless-stopped
+    <<: *default-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk --config ''"]
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_app__admin_username: ${LISTMONK_ADMIN_USER}
+      LISTMONK_app__admin_password: ${LISTMONK_ADMIN_PASSWORD}
+      LISTMONK_db__host: postgres
+      LISTMONK_db__port: 5432
+      LISTMONK_db__user: ${POSTGRES_USER}
+      LISTMONK_db__password: ${POSTGRES_PASSWORD}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__ssl_mode: disable
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - listmonk_uploads:/listmonk/uploads
+    networks: [internal, proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9000/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Plausible — analitica web sin cookies. Necesita Postgres (compartido) +
+  # ClickHouse (dedicado).
+  # ---------------------------------------------------------------------------
+  plausible-clickhouse:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    restart: unless-stopped
+    <<: *default-logging
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      - ./clickhouse/logs.xml:/etc/clickhouse-server/users.d/logs.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  plausible:
+    image: ghcr.io/plausible/community-edition:v2.1.4
+    restart: unless-stopped
+    <<: *default-logging
+    command: ["sh", "-c", "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      plausible-clickhouse:
+        condition: service_healthy
+    environment:
+      BASE_URL: ${PLAUSIBLE_BASE_URL}
+      SECRET_KEY_BASE: ${PLAUSIBLE_SECRET_KEY_BASE}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/plausible
+      CLICKHOUSE_DATABASE_URL: http://plausible-clickhouse:8123/plausible_events_db
+      DISABLE_REGISTRATION: ${PLAUSIBLE_DISABLE_REGISTRATION:-invite_only}
+      TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    volumes:
+      - plausible_data:/var/lib/plausible
+    networks: [internal, proxy]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # open-wa — API de WhatsApp para n8n. SOLO red interna (no lo publica NPM).
+  # Primer arranque: escanear el QR con `make wa-qr` (aparece en los logs).
+  # ---------------------------------------------------------------------------
+  openwa:
+    image: openwa/api-server:1.5.2
+    restart: unless-stopped
+    <<: *default-logging
+    command: >
+      --session-data-only
+      --port 8080
+      --api-host 0.0.0.0
+      --key ${OPENWA_API_KEY}
+      --session-id custos
+      --disable-spins
+      --popup false
+    volumes:
+      - openwa_data:/app/sessions
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5

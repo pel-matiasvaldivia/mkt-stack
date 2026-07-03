@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- ClickHouse afinado para footprint bajo (VPS chico). Plausible no necesita
+     los buffers grandes que trae por defecto. -->
+<clickhouse>
+    <mark_cache_size>536870912</mark_cache_size>
+    <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
+    <profiles>
+        <default>
+            <max_memory_usage>1000000000</max_memory_usage>
+            <max_bytes_before_external_group_by>0</max_bytes_before_external_group_by>
+        </default>
+    </profiles>
+</clickhouse>

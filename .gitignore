@@ -1,0 +1,13 @@
+# Secretos — nunca commitear
+.env
+.env.*
+!.env.example
+
+# Backups locales
+backups/
+*.dump
+*.sql.gz
+
+# Ruido de editores / SO
+.DS_Store
+*.swp
