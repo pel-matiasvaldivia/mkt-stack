@@ -1,13 +1,16 @@
 <?xml version="1.0"?>
-<!-- ClickHouse afinado para footprint bajo (VPS chico). Plausible no necesita
-     los buffers grandes que trae por defecto. -->
+<!-- Config de SERVIDOR (config.d/). ClickHouse afinado para footprint bajo
+     (VPS chico) y sin las tablas de system.log que solo comen disco en un uso
+     chico como el de Plausible. Estas directivas van en config.d, NO en users.d
+     (si van en users.d, ClickHouse no carga bien el usuario `default`). -->
 <clickhouse>
     <mark_cache_size>536870912</mark_cache_size>
     <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
-    <profiles>
-        <default>
-            <max_memory_usage>1000000000</max_memory_usage>
-            <max_bytes_before_external_group_by>0</max_bytes_before_external_group_by>
-        </default>
-    </profiles>
+
+    <!-- Desactiva tablas de system.log pesadas (config de servidor). -->
+    <asynchronous_metric_log remove="1"/>
+    <metric_log remove="1"/>
+    <query_thread_log remove="1"/>
+    <query_log remove="1"/>
+    <trace_log remove="1"/>
 </clickhouse>
