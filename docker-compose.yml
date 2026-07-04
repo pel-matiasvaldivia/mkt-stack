@@ -261,6 +261,14 @@ services:
     image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/clickhouse:24.12-alpine
     restart: unless-stopped
     <<: *default-logging
+    environment:
+      # Sin estas credenciales, el entrypoint de ClickHouse 24.x DESHABILITA el
+      # acceso por red al usuario `default` (queda solo localhost) y Plausible,
+      # que conecta desde otro contenedor, recibe AUTHENTICATION_FAILED. Con un
+      # usuario/clave explicitos, el entrypoint lo crea con red abierta (::/0).
+      CLICKHOUSE_USER: plausible
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DB: plausible_events_db
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
@@ -291,7 +299,7 @@ services:
       BASE_URL: ${PLAUSIBLE_BASE_URL}
       SECRET_KEY_BASE: ${PLAUSIBLE_SECRET_KEY_BASE}
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/plausible
-      CLICKHOUSE_DATABASE_URL: http://plausible-clickhouse:8123/plausible_events_db
+      CLICKHOUSE_DATABASE_URL: http://plausible:${CLICKHOUSE_PASSWORD}@plausible-clickhouse:8123/plausible_events_db
       DISABLE_REGISTRATION: ${PLAUSIBLE_DISABLE_REGISTRATION:-invite_only}
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:

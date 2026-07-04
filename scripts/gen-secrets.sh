@@ -41,6 +41,7 @@ set_secret CALCOM_NEXTAUTH_SECRET 40
 set_secret CALCOM_ENCRYPTION_KEY 32
 set_secret LISTMONK_ADMIN_PASSWORD 24
 set_secret PLAUSIBLE_SECRET_KEY_BASE 64
+set_secret CLICKHOUSE_PASSWORD 40
 set_secret OPENWA_API_KEY 40
 
 echo "==> .env generado. Faltan por completar a mano:"
