@@ -340,6 +340,8 @@ services:
       --port 8080
     volumes:
       - openwa_data:/sessions
+    ports:
+      - "5683:8080"
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1"]
