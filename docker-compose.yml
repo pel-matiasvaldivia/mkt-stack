@@ -104,6 +104,8 @@ services:
       N8N_SMTP_SENDER: ${SMTP_FROM}
     volumes:
       - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
     networks: [internal, proxy]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5678/healthz >/dev/null 2>&1 || exit 1"]
@@ -163,6 +165,8 @@ services:
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - twenty_data:/app/packages/twenty-server/.local-storage
+    ports:
+      - "5680:3000"
     networks: [internal, proxy]
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3000/healthz >/dev/null || exit 1"]
@@ -214,6 +218,8 @@ services:
       EMAIL_SERVER_USER: ${SMTP_USER}
       EMAIL_SERVER_PASSWORD: ${SMTP_PASSWORD}
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
+    ports:
+      - "5681:3000"
     networks: [internal, proxy]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/auth/login >/dev/null 2>&1 || exit 1"]
@@ -304,6 +310,8 @@ services:
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - plausible_data:/var/lib/plausible
+    ports:
+      - "5682:8000"
     networks: [internal, proxy]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8000/api/health >/dev/null 2>&1 || exit 1"]
