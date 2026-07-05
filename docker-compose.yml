@@ -146,11 +146,31 @@ services:
       timeout: 5s
       retries: 5
 
+  # Ajusta el owner de los volumenes de Twenty a UID 1000 (el usuario de la
+  # imagen) antes de que arranque el server. Sin esto el volumen `docker-data`
+  # se crea como root y el entrypoint (UID 1000) no puede escribir db_status:
+  # el touch falla, el script sale con error y el contenedor entra en loop.
+  # Corre una vez y termina (equivale al `change-vol-ownership` del compose
+  # oficial). Reusa la imagen redis del mirror (trae busybox con chown/sh).
+  twenty-init:
+    image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/redis:7.4-alpine
+    user: root
+    <<: *default-logging
+    entrypoint: ["sh", "-c"]
+    command: ["chown -R 1000:1000 /vol-local-storage /vol-docker-data"]
+    volumes:
+      - twenty_data:/vol-local-storage
+      - twenty_docker_data:/vol-docker-data
+    networks: [internal]
+    restart: "no"
+
   twenty-server:
     image: ${REGISTRY:-ghcr.io/pel-matiasvaldivia/mkt-stack}/twenty:v0.42.0
     restart: unless-stopped
     <<: *default-logging
     depends_on:
+      twenty-init:
+        condition: service_completed_successfully
       twenty-db:
         condition: service_healthy
       twenty-redis:
