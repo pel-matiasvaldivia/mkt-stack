@@ -34,6 +34,7 @@ volumes:
   pg_data:
   twenty_pg_data:
   twenty_data:
+  twenty_docker_data:
   redis_data:
   clickhouse_data:
   clickhouse_logs:
@@ -165,6 +166,7 @@ services:
       TZ: ${TZ:-America/Argentina/Buenos_Aires}
     volumes:
       - twenty_data:/app/packages/twenty-server/.local-storage
+      - twenty_docker_data:/app/docker-data
     ports:
       - "5680:3000"
     networks: [internal, proxy]
